@@ -1,4 +1,8 @@
-includes/config.local.php
-data/
-*.log
+node_modules/
+.next/
 .env
+.env.local
+.pglite/
+*.log
+next-env.d.ts
+tsconfig.tsbuildinfo

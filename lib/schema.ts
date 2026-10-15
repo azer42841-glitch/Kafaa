@@ -1,0 +1,49 @@
+import { exec } from './db';
+
+// المخطط الأساسي (Postgres). كل العبارات آمنة للتكرار.
+const STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS settings (k VARCHAR(64) PRIMARY KEY, v TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY, name VARCHAR(80) NOT NULL, email VARCHAR(190) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_login_at TIMESTAMPTZ NULL, country CHAR(2) NULL)`,
+  `CREATE TABLE IF NOT EXISTS courses (
+    id SERIAL PRIMARY KEY, slug VARCHAR(40) NOT NULL UNIQUE, title_en VARCHAR(120) NOT NULL, title_ar VARCHAR(120) NOT NULL,
+    description_ar VARCHAR(500) NOT NULL DEFAULT '', icon VARCHAR(16) NOT NULL DEFAULT '📘', template VARCHAR(30) NOT NULL DEFAULT 'general',
+    ord SMALLINT NOT NULL DEFAULT 0, published SMALLINT NOT NULL DEFAULT 1)`,
+  `CREATE TABLE IF NOT EXISTS levels (
+    id SERIAL PRIMARY KEY, course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, ord SMALLINT NOT NULL,
+    title_en VARCHAR(120) NOT NULL, title_ar VARCHAR(120) NOT NULL, description_ar VARCHAR(500) NOT NULL DEFAULT '',
+    UNIQUE (course_id, ord))`,
+  `CREATE TABLE IF NOT EXISTS units (
+    id SERIAL PRIMARY KEY, level_id INT NOT NULL REFERENCES levels(id) ON DELETE CASCADE, ord SMALLINT NOT NULL,
+    title_en VARCHAR(120) NOT NULL, title_ar VARCHAR(120) NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS lessons (
+    id SERIAL PRIMARY KEY, unit_id INT NOT NULL REFERENCES units(id) ON DELETE CASCADE, ord SMALLINT NOT NULL,
+    title_en VARCHAR(160) NOT NULL, title_ar VARCHAR(160) NOT NULL, published SMALLINT NOT NULL DEFAULT 0,
+    standard VARCHAR(20) NOT NULL DEFAULT '', reviewed_at DATE NULL)`,
+  `CREATE TABLE IF NOT EXISTS lesson_blocks (
+    id SERIAL PRIMARY KEY, lesson_id INT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE, ord SMALLINT NOT NULL,
+    type VARCHAR(20) NOT NULL, title VARCHAR(160) NOT NULL DEFAULT '', body TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS progress (
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE, lesson_id INT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    done_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (user_id, lesson_id))`,
+  `CREATE TABLE IF NOT EXISTS level_access (
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE, level_id INT NOT NULL REFERENCES levels(id) ON DELETE CASCADE,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (user_id, level_id))`,
+  `CREATE TABLE IF NOT EXISTS rate_events (id BIGSERIAL PRIMARY KEY, k VARCHAR(80) NOT NULL, at BIGINT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_rate ON rate_events (k, at)`,
+  `CREATE TABLE IF NOT EXISTS audit_log (id BIGSERIAL PRIMARY KEY, at TIMESTAMPTZ NOT NULL DEFAULT now(), actor VARCHAR(80) NOT NULL, action VARCHAR(80) NOT NULL, detail VARCHAR(300) NOT NULL DEFAULT '')`,
+  `CREATE TABLE IF NOT EXISTS ai_usage (
+    id BIGSERIAL PRIMARY KEY, user_id INT NULL, feature VARCHAR(30) NOT NULL, model VARCHAR(80) NOT NULL DEFAULT '',
+    tok_in INT NOT NULL DEFAULT 0, tok_out INT NOT NULL DEFAULT 0, audio_sec INT NOT NULL DEFAULT 0,
+    cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0, ok SMALLINT NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_user ON ai_usage (user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_time ON ai_usage (created_at, feature)`,
+  `CREATE TABLE IF NOT EXISTS countries (
+    code CHAR(2) PRIMARY KEY, name_ar VARCHAR(40) NOT NULL, name_en VARCHAR(40) NOT NULL, flag VARCHAR(8) NOT NULL DEFAULT '',
+    ord SMALLINT NOT NULL DEFAULT 0, active SMALLINT NOT NULL DEFAULT 1, featured SMALLINT NOT NULL DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS lesson_countries (
+    lesson_id INT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE, country CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+    PRIMARY KEY (lesson_id, country))`,
+];
+export async function ensureSchema() { for (const s of STATEMENTS) await exec(s); }
